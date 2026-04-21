@@ -1,0 +1,83 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Fields:
+    //   - uid: string (required)
+    //   - email: string (required)
+    //   - role: string (required, enum: ['super_admin', 'admin', 'director'])
+    //   - userId: string (required)
+    //   - password: string (legacy, for migration)
+    //
+    // Collection: customers
+    // Fields:
+    //   - accountNumber: string (required)
+    //   - name: string (required)
+    //   - mobile: string (required)
+    //   ...
+    //
+    // Collection: investments
+    // Fields:
+    //   - customerAccountNumber: string (required)
+    //   - productName: string (required)
+    //   - salePrice: number (required)
+    //   ...
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.email in ["shanubegumts@gmail.com", "aspsbazar@gmail.com", "cmrabbicarromking@gmail.com", "balkoy72@gmail.com", "mohammadrabbi617@gmail.com"] ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'super_admin'])
+      );
+    }
+
+    function isSuperAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.email in ["shanubegumts@gmail.com", "aspsbazar@gmail.com", "cmrabbicarromking@gmail.com", "balkoy72@gmail.com", "mohammadrabbi617@gmail.com"] ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super_admin')
+      );
+    }
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+    // Allow all authenticated users to read and write to most collections for simplicity
+    match /{collectionName}/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Still protect users collection slightly
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && (request.auth.uid == userId || isSuperAdmin());
+    }
+
+    // App Settings
+    match /app_settings/{docId} {
+      allow read: if true; 
+      allow write: if isAuthenticated();
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
