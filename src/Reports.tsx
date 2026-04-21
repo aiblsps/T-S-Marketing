@@ -115,8 +115,37 @@ export const Reports = () => {
     if (!showDeleteConfirm || role !== 'super_admin') return;
     
     try {
-      await deleteDoc(doc(db, 'transactions', showDeleteConfirm.id));
-      // No need to manually update reportData as onSnapshot will handle it
+      const batch = writeBatch(db);
+      const isClosingDraft = activeReport === 'cash_closing';
+      
+      if (isClosingDraft) {
+        // Delete the cash closing record
+        batch.delete(doc(db, 'cash_closings', showDeleteConfirm.id));
+        
+        // Also find and delete associated Cash Payment transaction
+        const qTr = query(
+          collection(db, 'transactions'),
+          where('date', '==', showDeleteConfirm.date),
+          where('category', '==', 'cash_closing_report')
+        );
+        const snapTr = await getDocs(qTr);
+        snapTr.forEach(d => batch.delete(d.ref));
+      } else {
+        // Delete the transaction record
+        batch.delete(doc(db, 'transactions', showDeleteConfirm.id));
+        
+        // If it was a cash closing payment, also delete the closing report
+        if (showDeleteConfirm.category === 'cash_closing_report' || showDeleteConfirm.type === 'Cash Payment') {
+          const qCl = query(
+            collection(db, 'cash_closings'),
+            where('date', '==', showDeleteConfirm.date)
+          );
+          const snapCl = await getDocs(qCl);
+          snapCl.forEach(d => batch.delete(d.ref));
+        }
+      }
+      
+      await batch.commit();
       setShowDeleteConfirm(null);
     } catch (error) {
       console.error("Error deleting:", error);
@@ -546,13 +575,23 @@ export const Reports = () => {
                           <td className="p-2 border border-slate-400 text-xs font-black text-amber-600 text-right">{formatCurrency(item.todayTotalExpense || 0, language)}</td>
                           <td className="p-2 border border-slate-400 text-xs font-black text-slate-900 text-right">{formatCurrency(item.todayLastBalance || item.closingBalance || 0, language)}</td>
                           <td className="p-2 border border-slate-400 text-center no-print">
-                            <button 
-                              onClick={() => setShowDenominations(item)}
-                              className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all"
-                              title={t('viewDenominations')}
-                            >
-                              <Eye size={16} />
-                            </button>
+                            <div className="flex items-center justify-center gap-1">
+                              <button 
+                                onClick={() => setShowDenominations(item)}
+                                className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all"
+                                title={t('viewDenominations')}
+                              >
+                                <Eye size={16} />
+                              </button>
+                              {role === 'super_admin' && (
+                                <button 
+                                  onClick={() => setShowDeleteConfirm(item)}
+                                  className="p-1.5 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ) : (
