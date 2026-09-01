@@ -1,19 +1,20 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
-import { collection, query, where, getDocs, orderBy, onSnapshot, deleteDoc, doc, writeBatch, getDoc, increment, deleteField, limit } from 'firebase/firestore';
+import { collection, query, where, getDocs, orderBy, onSnapshot, deleteDoc, doc, writeBatch, getDoc, increment, deleteField, limit, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from './firebase';
 import { useAuth } from './AuthContext';
 import { useApp } from './App';
-import { formatCurrency, cn, toBengaliNumber, formatDate } from './lib/utils';
-import { FileText, Calendar, Landmark, Search, Trash2, ArrowLeft, Printer, Eye, ChevronDown, Filter, TrendingUp, Check, AlertCircle, AlertTriangle } from 'lucide-react';
+import { formatCurrency, cn, toBengaliNumber, formatDate, formatNumberWithCommas, parseNumberFromCommas } from './lib/utils';
+import { FileText, Calendar, Landmark, Search, Trash2, ArrowLeft, Printer, Eye, ChevronDown, Filter, TrendingUp, Check, AlertCircle, AlertTriangle, Edit, ArrowUpCircle, ArrowDownCircle, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { toast } from 'sonner';
 
 const NOTES = [1000, 500, 200, 100, 50, 20, 10, 5, 2, 1];
 
 type ReportType = 'receive_payment' | 'cash_management' | 'cash_closing' | 'profit_report' | 'profit_loss_report' | 'expense_report' | 'advance_ledger_report' | null;
 
 export const Reports = () => {
-  const { role, appSettings } = useAuth();
+  const { role, customUserId, appSettings } = useAuth();
   const { t, language } = useApp();
   const location = useLocation();
   const [activeReport, setActiveReport] = useState<ReportType>(() => {
@@ -36,6 +37,16 @@ export const Reports = () => {
   const [showDenominations, setShowDenominations] = useState<any>(null);
   const [txFilter, setTxFilter] = useState<'All' | 'Receive' | 'Payment' | 'Expense'>('All');
   const [searchQuery, setSearchQuery] = useState('');
+
+  // States for Editing Transactions
+  const [editingTransaction, setEditingTransaction] = useState<any | null>(null);
+  const [editFormData, setEditFormData] = useState({
+    subType: 'receive',
+    amount: '',
+    date: new Date().toISOString().split('T')[0],
+    description: ''
+  });
+  const [editLoading, setEditLoading] = useState(false);
 
   // States for Advance Ledger Report
   const [landlords, setLandlords] = useState<any[]>([]);
@@ -211,6 +222,65 @@ export const Reports = () => {
     }
   };
 
+  const handleStartEdit = (item: any) => {
+    let subType = 'receive';
+    const typeLower = (item.type || '').toLowerCase();
+    if (typeLower === 'payment' || typeLower === 'cash payment' || typeLower === 'settlement') {
+      subType = 'payment';
+    } else if (typeLower === 'expense') {
+      subType = 'expense';
+    } else if (typeLower === 'receive' || typeLower === 'cash receive' || typeLower === 'profit') {
+      subType = 'receive';
+    }
+
+    setEditingTransaction(item);
+    setEditFormData({
+      subType,
+      amount: formatNumberWithCommas(item.amount || 0, language),
+      date: item.date || new Date().toISOString().split('T')[0],
+      description: item.description || item.note || ''
+    });
+  };
+
+  const handleUpdateTransaction = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTransaction) return;
+
+    const rawAmount = parseNumberFromCommas(editFormData.amount);
+    const amount = parseFloat(rawAmount);
+    if (isNaN(amount) || amount <= 0) {
+      toast.error(language === 'bn' ? 'অনুগ্রহ করে সঠিক পরিমাণ লিখুন' : 'Please enter a valid amount');
+      return;
+    }
+
+    setEditLoading(true);
+    try {
+      let type = 'Receive';
+      if (editFormData.subType === 'receive') type = 'Receive';
+      else if (editFormData.subType === 'payment') type = 'Payment';
+      else if (editFormData.subType === 'expense') type = 'Expense';
+
+      const txRef = doc(db, 'transactions', editingTransaction.id);
+      await updateDoc(txRef, {
+        amount: amount,
+        type: type,
+        date: editFormData.date,
+        description: editFormData.description || '',
+        updatedAt: serverTimestamp(),
+        updatedBy: customUserId || 'super_admin'
+      });
+
+      toast.success(language === 'bn' ? 'লেনদেন সফলভাবে আপডেট করা হয়েছে' : 'Transaction updated successfully');
+      setEditingTransaction(null);
+    } catch (error) {
+      console.error("Error updating transaction:", error);
+      handleFirestoreError(error, OperationType.UPDATE, `transactions/${editingTransaction.id}`);
+      toast.error(language === 'bn' ? 'আপডেট করতে সমস্যা হয়েছে' : 'Error updating transaction');
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
   const filteredData = useMemo(() => {
     let data = reportData;
     if (activeReport === 'receive_payment') {
@@ -244,6 +314,127 @@ export const Reports = () => {
       return acc;
     }, { receive: 0, payment: 0, expense: 0, profit: 0 });
   }, [filteredData]);
+
+  if (editingTransaction) {
+    return (
+      <div className="max-w-4xl mx-auto space-y-8 pb-20 px-4 sm:px-6">
+        <div className="bg-white p-6 sm:p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => setEditingTransaction(null)}
+                className="px-4 py-2 hover:bg-slate-100 rounded-xl transition-colors text-slate-600 font-black text-xs uppercase tracking-widest"
+              >
+                {t('back')}
+              </button>
+              <h2 className="text-3xl font-black text-slate-900 tracking-tight">
+                {t('edit')} {t('generalTransactions')}
+              </h2>
+            </div>
+            <div className={cn(
+              "p-3 rounded-2xl",
+              editFormData.subType === 'receive' ? "bg-emerald-50 text-emerald-600" : 
+              editFormData.subType === 'payment' ? "bg-rose-50 text-rose-600" : "bg-amber-50 text-amber-600"
+            )}>
+              <Landmark size={28} />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white p-6 sm:p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-8">
+          <form onSubmit={handleUpdateTransaction} className="space-y-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Sub-type Selection */}
+              <div className="space-y-2">
+                <label className="text-lg font-black text-black uppercase ml-1">{t('transactionTypeLabel')}</label>
+                <select 
+                  className="w-full px-5 py-4 bg-white border-2 border-slate-500 rounded-2xl focus:border-emerald-500 focus:outline-none font-black text-slate-900"
+                  value={editFormData.subType}
+                  onChange={(e) => setEditFormData({ ...editFormData, subType: e.target.value })}
+                >
+                  <option value="receive">{t('receive')}</option>
+                  <option value="payment">{t('payment')}</option>
+                  <option value="expense">{t('expense')}</option>
+                </select>
+              </div>
+
+              {/* Date Field */}
+              <div className="space-y-1">
+                <label className="text-lg font-black text-black uppercase ml-1">{t('date')}</label>
+                <input 
+                  type="date" 
+                  required 
+                  className="w-full px-5 py-4 bg-white border-2 border-slate-500 rounded-2xl focus:border-emerald-500 focus:outline-none font-black text-slate-900"
+                  value={editFormData.date}
+                  onChange={e => setEditFormData({...editFormData, date: e.target.value})}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-6">
+              {/* Amount Field */}
+              <div className="space-y-1">
+                <label className="text-lg font-black text-black uppercase ml-1">{t('amount')}</label>
+                <input 
+                  type="text" 
+                  required 
+                  className="w-full px-5 py-4 bg-white border-2 border-slate-500 rounded-2xl focus:border-emerald-500 focus:outline-none font-black text-slate-900 text-lg"
+                  value={editFormData.amount}
+                  onChange={e => {
+                    const raw = parseNumberFromCommas(e.target.value);
+                    if (raw === '' || !isNaN(Number(raw))) {
+                      setEditFormData({...editFormData, amount: formatNumberWithCommas(raw, language)});
+                    }
+                  }}
+                  placeholder={language === 'bn' ? 'টাকার পরিমাণ লিখুন' : 'Enter amount'}
+                />
+              </div>
+            </div>
+
+            {/* Description Field */}
+            <div className="space-y-1">
+              <label className="text-lg font-black text-black uppercase ml-1">{t('note')}</label>
+              <textarea 
+                className="w-full px-5 py-4 bg-white border-2 border-slate-500 rounded-2xl focus:border-emerald-500 focus:outline-none font-bold text-slate-900 min-h-[100px]"
+                value={editFormData.description}
+                onChange={e => setEditFormData({...editFormData, description: e.target.value})}
+                placeholder={t('enterDescription')}
+              />
+            </div>
+
+            <div className="flex gap-4 pt-2">
+              <button 
+                type="button"
+                onClick={() => setEditingTransaction(null)}
+                className="flex-1 py-5 rounded-2xl font-black text-slate-700 bg-slate-100 hover:bg-slate-200 transition-all active:scale-95 text-lg"
+              >
+                {t('cancel')}
+              </button>
+              <button 
+                type="submit" 
+                disabled={editLoading || !editFormData.subType}
+                className={cn(
+                  "flex-1 py-5 rounded-2xl font-black text-white shadow-xl transition-all active:scale-95 flex items-center justify-center gap-3 text-lg",
+                  editFormData.subType === 'receive' ? "bg-emerald-600 shadow-emerald-200 hover:bg-emerald-700" : 
+                  editFormData.subType === 'payment' ? "bg-rose-600 shadow-rose-200 hover:bg-rose-700" : 
+                  editFormData.subType === 'expense' ? "bg-amber-600 shadow-amber-200 hover:bg-amber-700" : "bg-slate-400"
+                )}
+              >
+                {editLoading ? (
+                  <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <>
+                    {editFormData.subType === 'receive' ? <ArrowUpCircle size={24} /> : <ArrowDownCircle size={24} />}
+                    {editFormData.subType === 'receive' ? t('receive') : editFormData.subType === 'payment' ? t('payment') : t('expense')} {t('update')}
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 pb-24 px-4">
@@ -911,12 +1102,24 @@ export const Reports = () => {
                               <td className="p-2 border border-slate-400 text-xs font-bold text-slate-500">{item.customUserId || 'N/A'}</td>
                               { role === 'super_admin' && (
                                 <td className="p-2 border border-slate-400 text-center no-print">
-                                  <button 
-                                    onClick={() => setShowDeleteConfirm(item)}
-                                    className="p-1.5 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
-                                  >
-                                    <Trash2 size={14} />
-                                  </button>
+                                  <div className="flex items-center justify-center gap-1">
+                                    {activeReport === 'receive_payment' && (
+                                      <button 
+                                        onClick={() => handleStartEdit(item)}
+                                        className="p-1.5 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-all"
+                                        title={t('edit')}
+                                      >
+                                        <Edit size={14} />
+                                      </button>
+                                    )}
+                                    <button 
+                                      onClick={() => setShowDeleteConfirm(item)}
+                                      className="p-1.5 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+                                      title={t('delete')}
+                                    >
+                                      <Trash2 size={14} />
+                                    </button>
+                                  </div>
                                 </td>
                               )}
                             </tr>
