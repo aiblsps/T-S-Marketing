@@ -444,27 +444,82 @@ export const TransactionReport = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-black">
-                {Object.entries(summaryTotals).length > 0 ? (
-                  Object.entries(summaryTotals).map(([type, total]: [string, any], idx) => (
-                    <tr key={type} className="text-[11px]">
-                      <td className="px-3 py-1 text-center font-bold text-slate-500 border-r border-black">
-                        {toBengaliNumber(idx + 1)}
-                      </td>
-                      <td className="px-3 py-1 font-bold text-slate-800 border-r border-black text-center">
-                        {type}
-                      </td>
-                      <td className="px-3 py-1 text-center font-black text-slate-900">
-                        {formatCurrency(total)}
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={3} className="px-4 py-8 text-center text-sm font-bold text-slate-400 italic">
-                      {t('noSummaryAvailable')}
-                    </td>
-                  </tr>
-                )}
+                {(() => {
+                  let totalReceive = 0;
+                  let totalPayment = 0;
+                  let totalExpense = 0;
+
+                  combinedTransactions.forEach((curr: any) => {
+                    const typeLower = (curr.type || '').toLowerCase();
+                    const amt = parseFloat(curr.amount) || 0;
+                    if (typeLower === 'receive' || typeLower === 'cash receive' || typeLower === 'profit') {
+                      totalReceive += amt;
+                    } else if (typeLower === 'payment' || typeLower === 'cash payment' || typeLower === 'settlement' || typeLower === 'deposit') {
+                      totalPayment += amt;
+                    } else if (typeLower === 'expense' || typeLower === 'withdrawal') {
+                      totalExpense += amt;
+                    }
+                  });
+
+                  if (combinedTransactions.length === 0) {
+                    return (
+                      <tr>
+                        <td colSpan={3} className="px-4 py-8 text-center text-sm font-bold text-slate-400 italic">
+                          {t('noSummaryAvailable')}
+                        </td>
+                      </tr>
+                    );
+                  }
+
+                  return (
+                    <>
+                      <tr className="text-[11px]">
+                        <td className="px-3 py-1 text-center font-bold text-slate-500 border-r border-black">
+                          {toBengaliNumber(1)}
+                        </td>
+                        <td className="px-3 py-1 font-bold text-slate-800 border-r border-black text-center">
+                          {t('totalReceive')}
+                        </td>
+                        <td className="px-3 py-1 text-center font-black text-emerald-600">
+                          {formatCurrency(totalReceive)}
+                        </td>
+                      </tr>
+                      <tr className="text-[11px]">
+                        <td className="px-3 py-1 text-center font-bold text-slate-500 border-r border-black">
+                          {toBengaliNumber(2)}
+                        </td>
+                        <td className="px-3 py-1 font-bold text-slate-800 border-r border-black text-center">
+                          {t('totalPayment')}
+                        </td>
+                        <td className="px-3 py-1 text-center font-black text-rose-600">
+                          {formatCurrency(totalPayment)}
+                        </td>
+                      </tr>
+                      <tr className="text-[11px]">
+                        <td className="px-3 py-1 text-center font-bold text-slate-500 border-r border-black">
+                          {toBengaliNumber(3)}
+                        </td>
+                        <td className="px-3 py-1 font-bold text-slate-800 border-r border-black text-center">
+                          {t('totalExpense')}
+                        </td>
+                        <td className="px-3 py-1 text-center font-black text-amber-600">
+                          {formatCurrency(totalExpense)}
+                        </td>
+                      </tr>
+                      <tr className="text-[11px] bg-slate-100 font-black">
+                        <td className="px-3 py-1 text-center text-slate-900 border-r border-black">
+                          #
+                        </td>
+                        <td className="px-3 py-1 text-slate-900 border-r border-black text-center whitespace-nowrap">
+                          Total Payment+Total Expense
+                        </td>
+                        <td className="px-3 py-1 text-center text-slate-900">
+                          {formatCurrency(totalPayment + totalExpense)}
+                        </td>
+                      </tr>
+                    </>
+                  );
+                })()}
               </tbody>
             </table>
           </div>
