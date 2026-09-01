@@ -307,10 +307,16 @@ export const Reports = () => {
 
   const totals = useMemo(() => {
     return filteredData.reduce((acc, curr) => {
-      if (curr.type === 'Receive') acc.receive += (curr.amount || 0);
-      else if (curr.type === 'Payment' || curr.type === 'payment' || curr.type === 'settlement') acc.payment += (curr.amount || 0);
-      else if (curr.type === 'Expense' || curr.type === 'expense') acc.expense += (curr.amount || 0);
-      else if (curr.type === 'Profit') acc.profit += (curr.amount || 0);
+      const typeLower = (curr.type || '').toLowerCase();
+      if (curr.type === 'Receive' || typeLower === 'receive' || typeLower === 'cash receive') {
+        acc.receive += (Number(curr.amount) || 0);
+      } else if (curr.type === 'Payment' || typeLower === 'payment' || typeLower === 'cash payment' || typeLower === 'settlement') {
+        acc.payment += (Number(curr.amount) || 0);
+      } else if (curr.type === 'Expense' || typeLower === 'expense') {
+        acc.expense += (Number(curr.amount) || 0);
+      } else if (curr.type === 'Profit' || typeLower === 'profit') {
+        acc.profit += (Number(curr.amount) || 0);
+      }
       return acc;
     }, { receive: 0, payment: 0, expense: 0, profit: 0 });
   }, [filteredData]);
@@ -1161,43 +1167,68 @@ export const Reports = () => {
              activeReport !== 'expense_report' && 
              activeReport !== 'cash_management' && 
              activeReport !== 'advance_ledger_report' && (
-              <div className="max-w-xs ml-auto space-y-2 no-print-break">
+              <div className="max-w-sm ml-auto space-y-2 no-print-break">
                 <h3 className="text-sm font-black text-slate-800 pb-1 uppercase tracking-widest border-b border-slate-100 flex items-center gap-2">
                   <TrendingUp size={16} className="text-blue-600" />
                   {t('summary')}
                 </h3>
                 <table className="w-full border-collapse border border-slate-400">
                   <tbody>
-                    {totals.receive > 0 && (
-                      <tr className="text-xs">
-                        <td className="p-2 border border-slate-400 font-bold text-slate-600 text-center">{t('totalReceive')}</td>
-                        <td className="p-2 border border-slate-400 font-black text-emerald-600 text-center">{formatCurrency(totals.receive, language)}</td>
-                      </tr>
+                    {activeReport === 'receive_payment' ? (
+                      <>
+                        <tr className="text-xs">
+                          <td className="p-2 border border-slate-400 font-bold text-slate-600 text-center">{t('totalReceive')}</td>
+                          <td className="p-2 border border-slate-400 font-black text-emerald-600 text-center">{formatCurrency(totals.receive, language)}</td>
+                        </tr>
+                        <tr className="text-xs">
+                          <td className="p-2 border border-slate-400 font-bold text-slate-600 text-center">{t('totalPayment')}</td>
+                          <td className="p-2 border border-slate-400 font-black text-rose-600 text-center">{formatCurrency(totals.payment, language)}</td>
+                        </tr>
+                        <tr className="text-xs">
+                          <td className="p-2 border border-slate-400 font-bold text-slate-600 text-center">{t('totalExpense')}</td>
+                          <td className="p-2 border border-slate-400 font-black text-amber-600 text-center">{formatCurrency(totals.expense, language)}</td>
+                        </tr>
+                        <tr className="text-xs bg-slate-100 font-black">
+                          <td className="p-2 border border-slate-400 font-black text-slate-800 text-center whitespace-nowrap">Total Payment+Total Expense</td>
+                          <td className="p-2 border border-slate-400 font-black text-slate-900 text-center whitespace-nowrap">
+                            {formatCurrency(totals.payment + totals.expense, language)}
+                          </td>
+                        </tr>
+                      </>
+                    ) : (
+                      <>
+                        {totals.receive > 0 && (
+                          <tr className="text-xs">
+                            <td className="p-2 border border-slate-400 font-bold text-slate-600 text-center">{t('totalReceive')}</td>
+                            <td className="p-2 border border-slate-400 font-black text-emerald-600 text-center">{formatCurrency(totals.receive, language)}</td>
+                          </tr>
+                        )}
+                        {totals.payment > 0 && (
+                          <tr className="text-xs">
+                            <td className="p-2 border border-slate-400 font-bold text-slate-600 text-center">{t('totalPayment')}</td>
+                            <td className="p-2 border border-slate-400 font-black text-rose-600 text-center">{formatCurrency(totals.payment, language)}</td>
+                          </tr>
+                        )}
+                        {totals.expense > 0 && (
+                          <tr className="text-xs">
+                            <td className="p-2 border border-slate-400 font-bold text-slate-600 text-center">{t('totalExpense')}</td>
+                            <td className="p-2 border border-slate-400 font-black text-amber-600 text-center">{formatCurrency(totals.expense, language)}</td>
+                          </tr>
+                        )}
+                        {totals.profit > 0 && (
+                          <tr className="text-xs">
+                            <td className="p-2 border border-slate-400 font-bold text-slate-600 text-center">{t('totalProfit')}</td>
+                            <td className="p-2 border border-slate-400 font-black text-blue-600 text-center">{formatCurrency(totals.profit, language)}</td>
+                          </tr>
+                        )}
+                        <tr className="text-xs bg-slate-100 font-black">
+                          <td className="p-2 border border-slate-400 font-black text-slate-800 text-center">Total</td>
+                          <td className="p-2 border border-slate-400 font-black text-slate-900 text-center">
+                            {formatCurrency(Math.abs(totals.receive + totals.profit - totals.payment - totals.expense), language)}
+                          </td>
+                        </tr>
+                      </>
                     )}
-                    {totals.payment > 0 && (
-                      <tr className="text-xs">
-                        <td className="p-2 border border-slate-400 font-bold text-slate-600 text-center">{t('totalPayment')}</td>
-                        <td className="p-2 border border-slate-400 font-black text-rose-600 text-center">{formatCurrency(totals.payment, language)}</td>
-                      </tr>
-                    )}
-                    {totals.expense > 0 && (
-                      <tr className="text-xs">
-                        <td className="p-2 border border-slate-400 font-bold text-slate-600 text-center">{t('totalExpense')}</td>
-                        <td className="p-2 border border-slate-400 font-black text-amber-600 text-center">{formatCurrency(totals.expense, language)}</td>
-                      </tr>
-                    )}
-                    {totals.profit > 0 && (
-                      <tr className="text-xs">
-                        <td className="p-2 border border-slate-400 font-bold text-slate-600 text-center">{t('totalProfit')}</td>
-                        <td className="p-2 border border-slate-400 font-black text-blue-600 text-center">{formatCurrency(totals.profit, language)}</td>
-                      </tr>
-                    )}
-                    <tr className="text-xs bg-slate-100">
-                      <td className="p-2 border border-slate-400 font-black text-slate-800 text-center">Total</td>
-                      <td className="p-2 border border-slate-400 font-black text-slate-900 text-center">
-                        {formatCurrency(Math.abs(totals.receive + totals.profit - totals.payment - totals.expense), language)}
-                      </td>
-                    </tr>
                   </tbody>
                 </table>
               </div>
